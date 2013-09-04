@@ -1,4 +1,4 @@
-# Backup script for Rasberry Pi
+# Backup script for Raspberry Pi
 This script does an image backup of the Pi SD card using dd. It is not the most efficient method, but it creates a complete backup and it's easy to restore in case of complete card failure.
 
 ## Installation
@@ -13,6 +13,8 @@ ___Example___
 Update /etc/crontab to run backup.sh as root every night at 3am
 
 ```01 3    * * *   root    /home/pi/scripts/backup.sh```
+
+The backup took a little more than an hour on my first run (SD card to USB HDD).
 
 
 ## CREDITS
