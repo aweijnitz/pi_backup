@@ -7,7 +7,7 @@
 #   http://www.raspberrypi.org/phpBB3/viewtopic.php?p=136912 
 #
 # 2013-Sept-04
-# Merged in later comments from the original thread (the pv exists check) and added the backup.log
+# Merged in later comments from the original thread (the pv exists check modified) and added the backup.log
 #
 # Add an entry to crontab to run regurlarly.
 # Example: Update /etc/crontab to run backup.sh as root every night at 3am
@@ -18,11 +18,18 @@
 SUBDIR=raspberrypi_backups
 DIR=/mnt/500GB_USB_HD/backups/$SUBDIR
 
+# Check if backup directory exists
+if [ ! -d "$DIR" ];
+   then
+      mkdir -p $DIR
+      echo "Backup directory $DIR doesn't exist, created it now!" >> $DIR/backup.log
+fi
+
 echo "____ BACKUP ON $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
 echo "Starting RaspberryPI backup process!" >> $DIR/backup.log
 
 # First check if pv package is installed, if not, install it first
-if dpkg -s pv | grep -q Status; then
+if `dpkg -s pv | grep -q Status;`
    then
       echo "Package 'pv' is installed." >> $DIR/backup.log
    else
@@ -32,12 +39,6 @@ if dpkg -s pv | grep -q Status; then
 fi
 
 
-# Check if backup directory exists
-if [ ! -d "$DIR" ];
-   then
-      echo "Backup directory $DIR doesn't exist, creating it now!" >> $DIR/backup.log
-      mkdir $DIR
-fi
 
 # Create a filename with datestamp for our current backup (without .img suffix)
 OFILE="$DIR/backup_$(date +%Y%m%d_%H%M%S)"
@@ -88,3 +89,5 @@ if [ $RESULT = 0 ];
       echo "RaspberryPI backup process failed!" >> $DIR/backup.log
       exit 1
 fi
+
+echo "____ BACKUP SCRIPT FINISHED $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
