@@ -9,6 +9,9 @@
 # 2013-Sept-04
 # Merged in later comments from the original thread (the pv exists check modified) and added the backup.log
 #
+# 2013-Sept-05
+# Remved tar compression, since it takes FOREVER to complete and I don't need it.
+#
 # Add an entry to crontab to run regurlarly.
 # Example: Update /etc/crontab to run backup.sh as root every night at 3am
 # 01 4    * * *   root    /home/pi/scripts/backup.sh
@@ -74,12 +77,13 @@ nginx
 if [ $RESULT = 0 ];
    then
       echo "Successful backup, previous backup files will be deleted." >> $DIR/backup.log
-      rm -f $DIR/backup_*.tar.gz
+      rm -f $DIR/backup_*.img
       mv $OFILE $OFILEFINAL
-      echo "Backup is being tarred. Please wait..." >> $DIR/backup.log
-      tar zcf $OFILEFINAL.tar.gz $OFILEFINAL
-      rm -rf $OFILEFINAL
+      # echo "Backup is being tarred. Please wait..." >> $DIR/backup.log
+      # tar zcf $OFILEFINAL.tar.gz $OFILEFINAL
+      # rm -rf $OFILEFINAL
       echo "RaspberryPI backup process completed! FILE: $OFILEFINAL.tar.gz" >> $DIR/backup.log
+      echo "____ BACKUP SCRIPT FINISHED $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
       exit 0
 # Else remove attempted backup file
    else
@@ -87,7 +91,8 @@ if [ $RESULT = 0 ];
       echo "Please check there is sufficient space on the HDD." >> $DIR/backup.log
       rm -f $OFILE
       echo "RaspberryPI backup process failed!" >> $DIR/backup.log
+      echo "____ BACKUP SCRIPT FINISHED $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
       exit 1
 fi
 
-echo "____ BACKUP SCRIPT FINISHED $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
+
