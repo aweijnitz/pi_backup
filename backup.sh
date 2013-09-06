@@ -82,7 +82,7 @@ if [ $RESULT = 0 ];
       # echo "Backup is being tarred. Please wait..." >> $DIR/backup.log
       # tar zcf $OFILEFINAL.tar.gz $OFILEFINAL
       # rm -rf $OFILEFINAL
-      echo "RaspberryPI backup process completed! FILE: $OFILEFINAL.tar.gz" >> $DIR/backup.log
+      echo "RaspberryPI backup process completed! FILE: $OFILEFINAL" >> $DIR/backup.log
       echo "____ BACKUP SCRIPT FINISHED $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
       exit 0
 # Else remove attempted backup file
