@@ -24,7 +24,7 @@
 function stopServices {
     echo "Stopping some services before backup." >> $DIR/backup.log
     service cron stop
-    #service ssh stop
+    service ssh stop
     service deluge-daemon stop
     service btsync stop
     service apache2 stop
@@ -37,17 +37,28 @@ function startServices {
     service apache2 start
     service btsync start
     service deluge-daemon start
-    #service ssh start
+    service ssh start
     service cron start
 }
 
 
 # Setting up directories
 SUBDIR=raspberrypi_backups
-DIR=/media/usbstick64gb/$SUBDIR
+MOUNTPOINT=/media/usbstick64gb
+DIR=$MOUNTPOINT/$SUBDIR
 
-function tarBackup{
-    echo "Backup tarring skipped ! " >> $DIR/backup.log
+# Function which tries to mount MOUNTPOINT
+function mountMountPoint {
+    # mount all drives in fstab (that means MOUNTPOINT needs an entry there)
+    mount -a
+}
+function postBackupSucess {
+
+}
+
+#
+function tarBackup {
+    echo "Backup tarring skipped!" >> $DIR/backup.log
     return 0
 
     # first arguement ($1) is the file to beeing tarred
@@ -58,6 +69,17 @@ function tarBackup{
 }
 # =====================================================================
 
+
+# Check if mount point is mounted, if not quit!
+if ! mountpoint -q "$MOUNTPOINT" ; then
+    echo "Destination is not mounted; attempting to mount"
+    mountMountPoint
+    if ! mountpoint -q "$MOUNTPOINT" ; then
+        echo "Unable to mount $MOUNTPOINT; Aborting"
+        exit 1
+    fi
+    echo "Mounted $MOUNTPOINT; Continuing backup"
+fi
 
 # Check if backup directory exists
 if [ ! -d "$DIR" ];
@@ -127,9 +149,12 @@ else
     rm -f $OFILE
 fi
 
-if [ $BACKUP_SUCCESS = 0];
+if [ $BACKUP_SUCCESS = 0 ];
 then 
     echo "RaspberryPI backup process completed! FILE: $OFILEFINAL" >> $DIR/backup.log
+    
+    postProcessSuccess
+    
     echo "____ BACKUP SCRIPT FINISHED $(date +%Y/%m/%d_%H:%M:%S)" >> $DIR/backup.log
     exit 0
 else
