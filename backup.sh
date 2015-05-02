@@ -28,37 +28,36 @@
 # ======================== CHANGE THESE VALUES ========================
 function stopServices {
 	echo -e "${purple}${bold}Stopping services before backup${NC}${normal}" | tee -a $DIR/backup.log
-    service cron stop
-    service ssh stop
-    service deluge-daemon stop
-    service btsync stop
-    service apache2 stop
-    service samba stop
+    sudo service sendmail stop
+    sudo service cron stop
+    sudo service ssh stop
+    sudo pkill deluged
+    sudo pkill deluge-web
+    sudo service deluge-daemon stop
+    sudo ervice btsync stop
+    sudo service apache2 stop
+    sudo service samba stop
+    
+    #sudo service noip stop
+    #sudo service proftpd stop
+    #sudo service webmin stop
+    #sudo service xrdp stop
+    #sudo service ddclient stop
+    #sudo service apache2 stop
+    #sudo service samba stop
+    #sudo service avahi-daemon stop
+    #sudo service netatalk stop
 }
 
 function startServices {
 	echo -e "${purple}${bold}Starting the stopped services${NC}${normal}" | tee -a $DIR/backup.log
-    service samba start
-    service apache2 start
-    service btsync start
-    service deluge-daemon start
-    service ssh start
-    service cron start
-    #sudo pkill deluged
-#sudo pkill deluge-web
-#sudo service deluge-daemon stop
-#sudo service noip stop
-#sudo service proftpd stop
-#sudo service webmin stop
-#sudo service xrdp stop
-#sudo service ddclient stop
-#sudo service apache2 stop
-#sudo service samba stop
-#sudo service avahi-daemon stop
-#sudo service netatalk stop
-#sudo service sendmail stop
-#sudo /var/ossec/bin/ossec-control stop
-#sudo service ssh stop
+    sudo ervice samba start
+    sudo service apache2 start
+    sudo service btsync start
+    sudo service deluge-daemon start
+    sudo service ssh start
+    sudo service cron start
+    sudo service sendmail start
 }
 
 
@@ -68,7 +67,7 @@ MOUNTPOINT=/media/usbstick64gb
 DIR=$MOUNTPOINT/$SUBDIR
 RETENTIONPERIOD=1 # days to keep old backups
 POSTPROCESS=0 # 1 to use a postProcessSucess function after successfull backup
-GZIP=1 # whether to gzip the backup or not
+GZIP=0 # whether to gzip the backup or not
 
 # Function which tries to mount MOUNTPOINT
 function mountMountPoint {
@@ -80,17 +79,17 @@ function mountMountPoint {
 function postProcessSucess {
 	# Update Packages and Kernel
 	echo -e "${yellow}Update Packages and Kernel${NC}${normal}" | tee -a $DIR/backup.log
-			  sudo apt-get update
-			  sudo apt-get upgrade -y
-			  sudo apt-get autoclean
+    sudo apt-get update
+    sudo apt-get upgrade -y
+    sudo apt-get autoclean
 
-			  echo -e "${yellow}Update Raspberry Pi Firmware${NC}${normal}" | tee -a $DIR/backup.log
-			  sudo rpi-update
-			  sudo ldconfig
+    echo -e "${yellow}Update Raspberry Pi Firmware${NC}${normal}" | tee -a $DIR/backup.log
+    sudo rpi-update
+    sudo ldconfig
 
-			  # Reboot now
-			  echo -e "${yellow}Reboot now ...${NC}${normal}" | tee -a $DIR/backup.log
-			  sudo reboot
+    # Reboot now
+    echo -e "${yellow}Reboot now ...${NC}${normal}" | tee -a $DIR/backup.log
+    sudo reboot
 }
 
 # =====================================================================
@@ -118,12 +117,12 @@ if ! mountpoint -q "$MOUNTPOINT" ; then
 fi
 
 
-LOGFILE="$DIR/backup_$(date +%Y%m%d_%H%M%S).log"
+#LOGFILE="$DIR/backup_$(date +%Y%m%d_%H%M%S).log"
 
 # Check if backup directory exists
 if [ ! -d "$DIR" ];
    then
-      sudo mkdir $DIR
+      mkdir $DIR
 	  echo -e "${yellow}${bold}Backup directory $DIR didn't exist, I created it${NC}${normal}"  | tee -a $DIR/backup.log
 fi
 
@@ -147,7 +146,7 @@ fi
 
 
 
-# Create a filename with datestamp for our current backup (without .img suffix)
+# Create a filename with datestamp for our current backup
 OFILE="$DIR/backup_$(hostname)_$(date +%Y%m%d_%H%M%S)".img
 
 
@@ -163,7 +162,8 @@ SDSIZE=`sudo blockdev --getsize64 /dev/mmcblk0`;
 if [ $GZIP = 1 ];
 	then
 		echo -e "${green}Gzipping backup${NC}${normal}"
-		sudo pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd  bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE.tgz
+		OFILE=$OFILE.gz # append gz at file
+        sudo pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd  bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE
 	else
 		echo -e "${green}No backup compression${NC}${normal}"
 		sudo pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
@@ -180,7 +180,7 @@ if [ $BACKUP_SUCCESS =  0 ];
 then
       echo -e "${green}${bold}RaspberryPI backup process completed! FILE: $OFILE${NC}${normal}" | tee -a $DIR/backup.log
       echo -e "${yellow}Removing backups older than $RETENTIONPERIOD days${NC}" | tee -a $DIR/backup.log
-      sudo find $DIR -maxdepth 1 -name "*.img" -mtime +$RETENTIONPERIOD -exec rm {} \;
+      sudo find $DIR -maxdepth 1 -name "*.img" -o -name "*.gz" -mtime +$RETENTIONPERIOD -exec rm {} \;
       echo -e "${cyan}If any backups older than $RETENTIONPERIOD days were found, they were deleted${NC}" | tee -a $DIR/backup.log
 
  
