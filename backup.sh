@@ -34,7 +34,7 @@ function stopServices {
     sudo pkill deluged
     sudo pkill deluge-web
     sudo service deluge-daemon stop
-    sudo ervice btsync stop
+    sudo service btsync stop
     sudo service apache2 stop
     sudo service samba stop
     
