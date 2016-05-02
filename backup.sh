@@ -34,7 +34,7 @@ function stopServices {
     sudo pkill deluged
     sudo pkill deluge-web
     sudo service deluge-daemon stop
-    sudo ervice btsync stop
+    sudo service btsync stop
     sudo service apache2 stop
     sudo service samba stop
     
@@ -51,7 +51,7 @@ function stopServices {
 
 function startServices {
 	echo -e "${purple}${bold}Starting the stopped services${NC}${normal}" | tee -a $DIR/backup.log
-    sudo ervice samba start
+    sudo service samba start
     sudo service apache2 start
     sudo service btsync start
     sudo service deluge-daemon start
