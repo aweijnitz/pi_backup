@@ -43,8 +43,6 @@ function stopServices {
     #sudo service webmin stop
     #sudo service xrdp stop
     #sudo service ddclient stop
-    #sudo service apache2 stop
-    #sudo service samba stop
     #sudo service avahi-daemon stop
     #sudo service netatalk stop
 }
