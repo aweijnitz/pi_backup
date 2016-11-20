@@ -180,7 +180,7 @@ if [ $BACKUP_SUCCESS =  0 ];
 then
       echo -e "${green}${bold}RaspberryPI backup process completed! FILE: $OFILE${NC}${normal}" | tee -a $DIR/backup.log
       echo -e "${yellow}Removing backups older than $RETENTIONPERIOD days${NC}" | tee -a $DIR/backup.log
-      sudo find $DIR -maxdepth 1 -name "*.img" -o -name "*.gz" -mtime +$RETENTIONPERIOD -exec rm {} \;
+      sudo find $DIR -maxdepth 1 -mtime +$RETENTIONPERIOD \( -name "*.img" -o -name "*.gz" \) -exec rm {} \;
       echo -e "${cyan}If any backups older than $RETENTIONPERIOD days were found, they were deleted${NC}" | tee -a $DIR/backup.log
 
  
