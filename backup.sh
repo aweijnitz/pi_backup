@@ -21,53 +21,62 @@
 # Added options around updates and gzips
 #
 # Add an entry to crontab to run regurlarly.
-# Example: Update /etc/crontab to run backup.sh as root every night at 3am
-# 01 4    * * *   root    /home/pi/scripts/backup.sh
+# Example: Update root's crontab by:
+# $ sudo crontab -e 
+# to run backup.sh as root every night at 4am
+# 0 4 * * * /home/pi/scripts/backup.sh 2>&1 | /home/pi/scripts/uncolor.sh | /home/pi/scripts/timestamp.sh >> /path/to/your/backups/backup.log
 
+# Make sure only root can run the script
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 # ======================== CHANGE THESE VALUES ========================
 function stopServices {
-	echo -e "${purple}${bold}Stopping services before backup${NC}${normal}" | tee -a $DIR/backup.log
-    sudo service sendmail stop
-    sudo service cron stop
-    sudo service ssh stop
-    sudo pkill deluged
-    sudo pkill deluge-web
-    sudo service deluge-daemon stop
-    sudo ervice btsync stop
-    sudo service apache2 stop
-    sudo service samba stop
+    echo -e "${purple}${bold}Stopping services before backup${reset}"
+    service smbd stop #samba
+    service ssh stop
+    service cron stop
     
-    #sudo service noip stop
-    #sudo service proftpd stop
-    #sudo service webmin stop
-    #sudo service xrdp stop
-    #sudo service ddclient stop
-    #sudo service apache2 stop
-    #sudo service samba stop
-    #sudo service avahi-daemon stop
-    #sudo service netatalk stop
+    #service sendmail stop
+    #pkill deluged
+    #pkill deluge-web
+    #service deluge-daemon stop
+    #service btsync stop
+    #service apache2 stop
+    #service noip stop
+    #service proftpd stop
+    #service webmin stop
+    #service xrdp stop
+    #service ddclient stop
+    #service apache2 stop
+    #service samba stop
+    #service avahi-daemon stop
+    #service netatalk stop
 }
 
 function startServices {
-	echo -e "${purple}${bold}Starting the stopped services${NC}${normal}" | tee -a $DIR/backup.log
-    sudo ervice samba start
-    sudo service apache2 start
-    sudo service btsync start
-    sudo service deluge-daemon start
-    sudo service ssh start
-    sudo service cron start
-    sudo service sendmail start
+    echo -e "${purple}${bold}Starting the stopped services${reset}"
+    service smbd start #samba
+    service ssh start
+    service cron start
+    #service apache2 start
+    #service btsync start
+    #service deluge-daemon start
+    #service sendmail start
 }
-
 
 # Setting up directories
 SUBDIR=raspberrypi_backups
-MOUNTPOINT=/media/usbstick64gb
+MOUNTPOINT=/your/mount/point
 DIR=$MOUNTPOINT/$SUBDIR
-RETENTIONPERIOD=1 # days to keep old backups
+RETENTIONPERIOD=3 # days to keep old backups
 POSTPROCESS=0 # 1 to use a postProcessSucess function after successfull backup
-GZIP=0 # whether to gzip the backup or not
+GZIP=1 # whether to gzip the backup or not
+TRUNCATE=1 # whether truncate unallocated space in image or not
 
 # Function which tries to mount MOUNTPOINT
 function mountMountPoint {
@@ -75,80 +84,85 @@ function mountMountPoint {
     mount -a
 }
 
-
 function postProcessSucess {
-	# Update Packages and Kernel
-	echo -e "${yellow}Update Packages and Kernel${NC}${normal}" | tee -a $DIR/backup.log
-    sudo apt-get update
-    sudo apt-get upgrade -y
-    sudo apt-get autoclean
+    # Update Packages and Kernel
+    echo -e "${yellow}Update Packages and Kernel${reset}"
+    apt-get update
+    apt-get upgrade -y
+    apt-get autoclean
 
-    echo -e "${yellow}Update Raspberry Pi Firmware${NC}${normal}" | tee -a $DIR/backup.log
-    sudo rpi-update
-    sudo ldconfig
+    echo -e "${yellow}Update Raspberry Pi Firmware${reset}"
+    rpi-update
+    ldconfig
 
     # Reboot now
-    echo -e "${yellow}Reboot now ...${NC}${normal}" | tee -a $DIR/backup.log
-    sudo reboot
+    echo -e "${yellow}Reboot now ...${reset}"
+    reboot
+}
+
+# Function for truncating unallocated space
+function truncateImage {
+    SECTORSIZE=`blockdev --getss /dev/mmcblk0`;
+    ENDSECTOR=`fdisk -l $OFILE | tail -n 2 | awk '{print $3}'`;
+    echo -e "${green}${bold}Truncating image file...${reset}"
+    echo -e "${green}Original size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
+    truncate --size=$[$SECTORSIZE*($ENDSECTOR+1)] $OFILE
+    echo -e "${green}Truncated size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
 }
 
 # =====================================================================
 
-
 # Setting up echo fonts
-red='\e[0;31m'
-green='\e[0;32m'
-cyan='\e[0;36m'
-yellow='\e[1;33m'
-purple='\e[0;35m'
-NC='\e[0m' #No Color
-bold=`tput bold`
-normal=`tput sgr0`
+red='\e[31m'
+green='\e[32m'
+cyan='\e[36m'
+yellow='\e[33m'
+purple='\e[35m'
+default='\e[39m'
+#bold=`tput bold`
+#normal=`tput sgr0`
+bold='\e[1m'
+reset='\e[0m'
 
 # Check if mount point is mounted, if not quit!
-if ! mountpoint -q "$MOUNTPOINT" ; then
-    echo -e "${yellow}${bold}Destination is not mounted; attempting to mount ... ${NC}${normal}"
+if [ ! mountpoint -q "$MOUNTPOINT" ]; then
+    echo -e "${yellow}${bold}Destination is not mounted; attempting to mount ...${reset}"
     mountMountPoint
-    if ! mountpoint -q "$MOUNTPOINT" ; then
-        echo -e "${red}${bold} Unable to mount $MOUNTPOINT; Aborting! ${NC}${normal}"
+    
+    if [ ! mountpoint -q "$MOUNTPOINT" ]; then
+        echo -e "${red}${bold} Unable to mount $MOUNTPOINT; Aborting!${reset}"
         exit 1
     fi
-    echo -e "${green}${bold}Mounted $MOUNTPOINT; Continuing backup${NC}${normal}"
+
+    echo -e "${green}${bold}Mounted $MOUNTPOINT; Continuing backup${reset}"
 fi
-
-
-#LOGFILE="$DIR/backup_$(date +%Y%m%d_%H%M%S).log"
 
 # Check if backup directory exists
 if [ ! -d "$DIR" ];
-   then
-      mkdir $DIR
-	  echo -e "${yellow}${bold}Backup directory $DIR didn't exist, I created it${NC}${normal}"  | tee -a $DIR/backup.log
+then
+    mkdir $DIR
+	echo -e "${yellow}${bold}Backup directory $DIR didn't exist, I created it${reset}"
 fi
 
-echo -e "${green}${bold}Starting RaspberryPI backup process!${NC}${normal}" | tee -a $DIR/backup.log
-echo "____ BACKUP ON $(date +%Y/%m/%d_%H:%M:%S)" | tee -a $DIR/backup.log
+echo -e "${green}${bold}Starting RaspberryPI backup process!${reset}"
+echo "____ BACKUP ON $(date +%Y/%m/%d_%H:%M:%S)"
 echo ""
 # First check if pv package is installed, if not, install it first
 PACKAGESTATUS=`dpkg -s pv | grep Status`;
 
 if [[ $PACKAGESTATUS == S* ]]
-   then
-      echo -e "${cyan}${bold}Package 'pv' is installed${NC}${normal}" | tee -a $DIR/backup.log
-      echo ""
-   else
-      echo -e "${yellow}${bold}Package 'pv' is NOT installed${NC}${normal}" | tee -a $DIR/backup.log
-      echo -e "${yellow}${bold}Installing package 'pv' + 'pv dialog'. Please wait...${NC}${normal}" | tee -a $DIR/backup.log
-      echo ""
-      sudo apt-get -y install pv && sudo apt-get -y install pv dialog
+then
+    echo -e "${cyan}${bold}Package 'pv' is installed${reset}"
+    echo ""
+else
+    echo -e "${yellow}${bold}Package 'pv' is NOT installed${reset}"
+    echo -e "${yellow}${bold}Installing package 'pv' + 'pv dialog'. Please wait...${reset}"
+    echo ""
+    apt-get -y install pv && apt-get -y install pv dialog
 fi
-
-
-
 
 # Create a filename with datestamp for our current backup
 OFILE="$DIR/backup_$(hostname)_$(date +%Y%m%d_%H%M%S)".img
-
 
 # First sync disks
 sync; sync
@@ -157,16 +171,32 @@ sync; sync
 stopServices
 
 # Begin the backup process, should take about 45 minutes hour from 8Gb SD card to HDD
-echo -e "${green}${bold}Backing up SD card to img file on HDD${NC}${normal}" | tee -a $DIR/backup.log
-SDSIZE=`sudo blockdev --getsize64 /dev/mmcblk0`;
+echo -e "${green}${bold}Backing up SD card to img file on HDD${reset}"
+SDSIZE=`blockdev --getsize64 /dev/mmcblk0`;
+
 if [ $GZIP = 1 ];
-	then
-		echo -e "${green}Gzipping backup${NC}${normal}"
-		OFILE=$OFILE.gz # append gz at file
-        sudo pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd  bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE
-	else
-		echo -e "${green}No backup compression${NC}${normal}"
-		sudo pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
+then
+    if [ $TRUNCATE = 1 ];
+    then
+        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
+        truncateImage
+        echo -e "${green}Gzipping backup...${reset}"
+        pv -cN source $OFILE | gzip | pv -cN gzip > $OFILE.gz
+        rm -rf $OFILE
+        OFILE=$OFILE.gz # append gz at file
+    else
+        echo -e "${green}Gzipping backup,,,${reset}"
+        OFILE=$OFILE.gz # append gz at file
+        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE
+    fi
+else
+    echo -e "${green}No backup compression${reset}"
+    pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
+
+    if [ $TRUNCATE = 1 ];
+    then
+        truncateImage
+    fi
 fi
 
 # Wait for DD to finish and catch result
@@ -176,24 +206,26 @@ BACKUP_SUCCESS=$?
 startServices
 
 # If command has completed successfully, delete previous backups and exit
-if [ $BACKUP_SUCCESS =  0 ];
+if [ $BACKUP_SUCCESS = 0 ];
 then
-      echo -e "${green}${bold}RaspberryPI backup process completed! FILE: $OFILE${NC}${normal}" | tee -a $DIR/backup.log
-      echo -e "${yellow}Removing backups older than $RETENTIONPERIOD days${NC}" | tee -a $DIR/backup.log
-      sudo find $DIR -maxdepth 1 -name "*.img" -o -name "*.gz" -mtime +$RETENTIONPERIOD -exec rm {} \;
-      echo -e "${cyan}If any backups older than $RETENTIONPERIOD days were found, they were deleted${NC}" | tee -a $DIR/backup.log
+    echo -e "${green}${bold}RaspberryPI backup process completed!${reset}"
+    echo -e "${green}FILE: $OFILE${reset}"
+    echo -e "${green}SIZE: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}" 
+    echo -e "${yellow}Removing backups older than $RETENTIONPERIOD days:${reset}"
+    find $DIR -maxdepth 1 -name "*.img" -o -name "*.img.gz" -mtime +$RETENTIONPERIOD -print -exec rm {} \;
+    echo -e "${cyan}If any backups older than $RETENTIONPERIOD days were found, they were deleted${reset}"
 
- 
- 	  if [ $POSTPROCESS = 1 ] ;
-	  then
-			postProcessSucess
-	  fi
-	  exit 0
-else 
+    if [ $POSTPROCESS = 1 ] ;
+    then
+        postProcessSucess
+    fi
+
+    exit 0
+else
     # Else remove attempted backup file
-     echo -e "${red}${bold}Backup failed!${NC}${normal}" | tee -a $DIR/backup.log
-     sudo rm -f $OFILE
-     echo -e "${purple}Last backups on HDD:${NC}" | tee -a $DIR/backup.log
-     sudo find $DIR -maxdepth 1 -name "*.img" -exec ls {} \;
-     exit 1
+    echo -e "${red}${bold}Backup failed!${reset}"
+    rm -f $OFILE
+    echo -e "${purple}Last backups on HDD:${reset}"
+    find $DIR -maxdepth 1 -name "*.img" -o -name "*.img.gz" -print
+    exit 1
 fi
