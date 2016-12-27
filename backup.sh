@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # ___ CREDITS
-# This script started from 
+# This script started from
 #   http://raspberrypi.stackexchange.com/questions/5427/can-a-raspberry-pi-be-used-to-create-a-backup-of-itself
-# which in turn started from 
-#   http://www.raspberrypi.org/phpBB3/viewtopic.php?p=136912 
+# which in turn started from
+#   http://www.raspberrypi.org/phpBB3/viewtopic.php?p=136912
 #
 # Users of this script can just modify the below marked values (stopService,startservice function and directory to
 # store the backup
@@ -22,7 +22,7 @@
 #
 # Add an entry to crontab to run regurlarly.
 # Example: Update root's crontab by:
-# $ sudo crontab -e 
+# $ sudo crontab -e
 # to run backup.sh as root every night at 4am
 # 0 4 * * * /home/pi/scripts/backup.sh 2>&1 | /home/pi/scripts/uncolor.sh | /home/pi/scripts/timestamp.sh >> /path/to/your/backups/backup.log
 
@@ -35,12 +35,13 @@ fi
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 # ======================== CHANGE THESE VALUES ========================
+
 function stopServices {
     echo -e "${purple}${bold}Stopping services before backup${reset}"
     service smbd stop #samba
     service ssh stop
     service cron stop
-    
+
     #service sendmail stop
     #pkill deluged
     #pkill deluge-web
@@ -101,13 +102,22 @@ function postProcessSucess {
 }
 
 # Function for truncating unallocated space
-function truncateImage {
+#function truncateImage {
+#    SECTORSIZE=`blockdev --getss /dev/mmcblk0`;
+#    ENDSECTOR=`fdisk -l $OFILE | tail -n 2 | awk '{print $3}'`;
+#    echo -e "${green}${bold}Truncating image file...${reset}"
+#    echo -e "${green}Original size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
+#    truncate --size=$[$SECTORSIZE*($ENDSECTOR+1)] $OFILE
+#    echo -e "${green}Truncated size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
+#}
+
+function getEndSector {
+    ENDSECTOR=`fdisk -l /dev/mmcblk0 | tail -n 2 | awk '{print $3}'`;
+    ENDSECTOR=$[$ENDSECTOR+1]
+}
+
+function getSectorSize {
     SECTORSIZE=`blockdev --getss /dev/mmcblk0`;
-    ENDSECTOR=`fdisk -l $OFILE | tail -n 2 | awk '{print $3}'`;
-    echo -e "${green}${bold}Truncating image file...${reset}"
-    echo -e "${green}Original size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
-    truncate --size=$[$SECTORSIZE*($ENDSECTOR+1)] $OFILE
-    echo -e "${green}Truncated size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
 }
 
 # =====================================================================
@@ -128,7 +138,7 @@ reset='\e[0m'
 if [ ! mountpoint -q "$MOUNTPOINT" ]; then
     echo -e "${yellow}${bold}Destination is not mounted; attempting to mount ...${reset}"
     mountMountPoint
-    
+
     if [ ! mountpoint -q "$MOUNTPOINT" ]; then
         echo -e "${red}${bold} Unable to mount $MOUNTPOINT; Aborting!${reset}"
         exit 1
@@ -174,28 +184,32 @@ stopServices
 echo -e "${green}${bold}Backing up SD card to img file on HDD${reset}"
 SDSIZE=`blockdev --getsize64 /dev/mmcblk0`;
 
+if [ $TRUNCATE = 1 ];
+then
+    getEndSector
+    getSectorSize
+fi
+
 if [ $GZIP = 1 ];
 then
-    if [ $TRUNCATE = 1 ];
-    then
-        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
-        truncateImage
-        echo -e "${green}Gzipping backup...${reset}"
-        pv -cN source $OFILE | gzip | pv -cN gzip > $OFILE.gz
-        rm -rf $OFILE
-        OFILE=$OFILE.gz # append gz at file
-    else
-        echo -e "${green}Gzipping backup,,,${reset}"
-        OFILE=$OFILE.gz # append gz at file
-        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE
-    fi
-else
-    echo -e "${green}No backup compression${reset}"
-    pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
+    OFILE=$OFILE.gz # append gz at file
 
     if [ $TRUNCATE = 1 ];
     then
-        truncateImage
+	echo -e "${green}Gzipping truncated backup...${reset}"
+        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd bs=$SECTORSIZE conv=sync,noerror iflag=fullblock count=$ENDSECTOR | gzip > $OFILE
+    else
+        echo -e "${green}Gzipping backup...${reset}"
+        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE
+    fi
+else
+    if [ $TRUNCATE = 1 ];
+    then
+        echo -e "${green}Truncated backup without compression...${reset}"
+	pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=$SECTORSIZE conv=sync,noerror iflag=fullblock count=$ENDSECTOR
+    else
+        echo -e "${green}ackup without compression...${reset}"
+        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
     fi
 fi
 
