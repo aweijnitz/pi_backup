@@ -36,6 +36,119 @@ export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 # ======================== CHANGE THESE VALUES ========================
 
+#Get command line arguments
+while [[ $# -gt 1 ]]
+do
+    key="$1"
+
+    case $key in
+        -s|--subdir)
+        SUBDIR:="$2"
+        shift # past argument
+        ;;
+        -c|--compress)
+        GZIP="$2"
+        shift # past argument
+        ;;
+        -t|--truncate)
+        TRUNCATE="$2"
+        shift # past argument
+        ;;
+        -m|--mountpoint)
+        MOUNTPOINT="$2"
+        shift
+        ;;
+        -p|--postprocess)
+        POSTPROCESS="$2"
+        shift
+        ;;
+        -r|--retperiod)
+        RETENTIONPERIOD="$2"
+        shift
+        ;;
+        -g|--gui)
+        GUI="$2"
+        shift
+        ;;
+        *)
+    ;;
+esac
+shift
+done
+
+# Setting up variables
+: ${SUBDIR:=raspberrypi_backups}
+: ${MOUNTPOINT=/media/pi/raspi}
+DIR=$MOUNTPOINT/$SUBDIR
+: ${RETENTIONPERIOD=3} # days to keep old backups
+: ${POSTPROCESS=0} # 1 to use a postProcessSucess function after successfull backup
+: ${GZIP=1} # whether to gzip the backup or not
+: ${TRUNCATE=1} # whether truncate unallocated space in image or not
+: ${GUI=1}
+
+: ${DIALOG_OK=0}
+: ${DIALOG_CANCEL=1}
+: ${DIALOG_HELP=2}
+: ${DIALOG_EXTRA=3}
+: ${DIALOG_ITEM_HELP=4}
+: ${DIALOG_ESC=255}
+
+# Setting up echo fonts
+red='\e[31m'
+green='\e[32m'
+cyan='\e[36m'
+yellow='\e[33m'
+purple='\e[35m'
+default='\e[39m'
+bold='\e[1m'
+reset='\e[0m'
+#bold=`tput bold`
+#normal=`tput sgr0`
+
+# Backup options dialog
+if [ $GUI = 1 ];
+then
+    exec 3>&1
+
+    dlg_selection=$(dialog --title "Options" \
+        --backtitle "Raspberry Pi Backup" \
+        --clear \
+        --checklist "Choose backup options:" 10 40 2 \
+        1 "Compress with Gzip" on \
+        2 "Truncate unallocated space" on \
+        2>&1 1>&3)
+
+    dlg_return_value=$?
+    exec 3>&-
+
+    case $dlg_return_value in
+        $DIALOG_OK)
+
+        if [[ $dlg_selection == *"1"* ]];
+        then
+            GZIP=1
+        else
+            GZIP=0
+        fi
+
+        if [[ $dlg_selection == *"2"* ]];
+        then
+            TRUNCATE=1
+        else
+            TRUNCATE=0
+        fi
+        ;;
+        $DIALOG_CANCEL)
+        echo "Cancel pressed. Defaults used."
+        ;;
+        $DIALOG_ESC)
+        echo "ESC pressed. Exiting."
+        exit 1
+        ;;
+    esac
+fi
+
+# ======================= FUNCTIONS ===================================
 function stopServices {
     echo -e "${purple}${bold}Stopping services before backup${reset}"
     service smbd stop #samba
@@ -70,15 +183,6 @@ function startServices {
     #service sendmail start
 }
 
-# Setting up directories
-SUBDIR=raspberrypi_backups
-MOUNTPOINT=/your/mount/point
-DIR=$MOUNTPOINT/$SUBDIR
-RETENTIONPERIOD=3 # days to keep old backups
-POSTPROCESS=0 # 1 to use a postProcessSucess function after successfull backup
-GZIP=1 # whether to gzip the backup or not
-TRUNCATE=1 # whether truncate unallocated space in image or not
-
 # Function which tries to mount MOUNTPOINT
 function mountMountPoint {
     # mount all drives in fstab (that means MOUNTPOINT needs an entry there)
@@ -101,16 +205,6 @@ function postProcessSucess {
     reboot
 }
 
-# Function for truncating unallocated space
-#function truncateImage {
-#    SECTORSIZE=`blockdev --getss /dev/mmcblk0`;
-#    ENDSECTOR=`fdisk -l $OFILE | tail -n 2 | awk '{print $3}'`;
-#    echo -e "${green}${bold}Truncating image file...${reset}"
-#    echo -e "${green}Original size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
-#    truncate --size=$[$SECTORSIZE*($ENDSECTOR+1)] $OFILE
-#    echo -e "${green}Truncated size: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}"
-#}
-
 function getEndSector {
     ENDSECTOR=`fdisk -l /dev/mmcblk0 | tail -n 2 | awk '{print $3}'`;
     ENDSECTOR=$[$ENDSECTOR+1]
@@ -120,56 +214,114 @@ function getSectorSize {
     SECTORSIZE=`blockdev --getss /dev/mmcblk0`;
 }
 
-# =====================================================================
-
-# Setting up echo fonts
-red='\e[31m'
-green='\e[32m'
-cyan='\e[36m'
-yellow='\e[33m'
-purple='\e[35m'
-default='\e[39m'
-#bold=`tput bold`
-#normal=`tput sgr0`
-bold='\e[1m'
-reset='\e[0m'
-
-# Check if mount point is mounted, if not quit!
-if [ ! mountpoint -q "$MOUNTPOINT" ]; then
-    echo -e "${yellow}${bold}Destination is not mounted; attempting to mount ...${reset}"
-    mountMountPoint
-
-    if [ ! mountpoint -q "$MOUNTPOINT" ]; then
-        echo -e "${red}${bold} Unable to mount $MOUNTPOINT; Aborting!${reset}"
-        exit 1
+function buildBackupCommand {
+    if [ $GZIP = 1 ];
+    then
+        OFILE=$OFILE.gz
+        tmp_ddof=""
+        tmp_gzip=" | gzip > $OFILE"
+        SCR_TITLE="Gzipping"
+    else
+        tmp_ddof=" of=$OFILE"
+        tmp_gzip=""
+        SCR_TITLE="Creating uncompressed"
     fi
 
-    echo -e "${green}${bold}Mounted $MOUNTPOINT; Continuing backup${reset}"
-fi
+    if [ $TRUNCATE = 1 ];
+    then
+        getEndSector
+        SDSIZE=$[$SECTORSIZE*$ENDSECTOR]
+        tmp_ddcount=" count=$ENDSECTOR"
+        SCR_TITLE="$SCR_TITLE truncated backup"
+    else
+        SDSIZE=`blockdev --getsize64 /dev/mmcblk0`;
+        ddcount=""
+        SCR_TITLE="$SCR_TITLE backup"
+    fi
 
-# Check if backup directory exists
-if [ ! -d "$DIR" ];
-then
-    mkdir $DIR
-	echo -e "${yellow}${bold}Backup directory $DIR didn't exist, I created it${reset}"
-fi
+    tmp_scr="/dev/mmcblk0 -s $SDSIZE | dd$tmp_ddof bs=$SECTORSIZE conv=sync,noerror iflag=fullblock$tmp_ddcount$tmp_gzip"
+
+    if [ $GUI = 1 ];
+    then
+        SCR_FINAL="(pv -n $tmp_scr) 2>&1 | dialog --backtitle \"Raspberry Pi Backup\" --title \"$SCR_TITLE\" --gauge $OFILE 10 70 0"
+    else
+        SCR_FINAL="echo -e '${green}$SCR_TITLE...${reset}' && pv $tmp_scr"
+    fi
+}
+
+# Function to check if required packages are installed
+function checkPackages {
+    # pv
+    PACKAGESTATUS=`dpkg-query --show --showformat='${db:Status-Status}\n' 'pv'`
+
+    if [[ $PACKAGESTATUS == installed ]]
+    then
+        echo -e "${cyan}${bold}Package 'pv' is installed${reset}"
+    else
+        echo -e "${yellow}${bold}Installing missing package 'pv'. Please wait...${reset}"
+        apt-get -y install pv
+    fi
+
+    # dialog
+    PACKAGESTATUS=`dpkg-query --show --showformat='${db:Status-Status}\n' 'dialog'`
+
+    if [[ $PACKAGESTATUS == installed ]]
+    then
+        echo -e "${cyan}${bold}Package 'dialog' is installed${reset}"
+    else
+        echo -e "${yellow}${bold}Installing missing package 'pv'. Please wait...${reset}"
+        apt-get -y install dialog
+    fi
+}
+
+# Function to check if mount point is mounted, if not quit
+function checkMountPoint {
+    #if ! grep -qs "$MOUNTPOINT" /proc/mounts; then
+    if ! mountpoint -q "$MOUNTPOINT"; then
+        echo -e "${yellow}${bold}Destination is not mounted; attempting to mount ...${reset}"
+        mountMountPoint
+
+        #if ! grep -qs "$MOUNTPOINT" /proc/mounts; then
+        if ! mountpoint -q "$MOUNTPOINT"; then
+            echo -e "${red}${bold} Unable to mount $MOUNTPOINT; Aborting!${reset}"
+            exit 1
+        fi
+
+        echo -e "${green}${bold}Mounted $MOUNTPOINT; Continuing backup${reset}"
+    fi
+}
+
+# functino to check if backup directory exists, if not, create it
+function checkBackupDir {
+    if [ ! -d "$DIR" ];
+    then
+        mkdir $DIR
+        echo -e "${yellow}${bold}Backup directory $DIR didn't exist, I created it${reset}"
+    fi
+}
+
+# Function to display message box
+function messageBox() {
+    local h=${1-10}	# box height default 10
+    local w=${2-40} 	# box width default 41
+    local t=${3-Output} # box title 
+    local m=${4-Msg}
+
+    dialog --backtitle "Raspberry Pi Backup" \
+        --title "${t}" \
+        --clear \
+        --msgbox "${m}" ${h} ${w}
+}
+
+# =====================================================================
+
+checkMountPoint
+checkBackupDir
+checkPackages
 
 echo -e "${green}${bold}Starting RaspberryPI backup process!${reset}"
 echo "____ BACKUP ON $(date +%Y/%m/%d_%H:%M:%S)"
 echo ""
-# First check if pv package is installed, if not, install it first
-PACKAGESTATUS=`dpkg -s pv | grep Status`;
-
-if [[ $PACKAGESTATUS == S* ]]
-then
-    echo -e "${cyan}${bold}Package 'pv' is installed${reset}"
-    echo ""
-else
-    echo -e "${yellow}${bold}Package 'pv' is NOT installed${reset}"
-    echo -e "${yellow}${bold}Installing package 'pv' + 'pv dialog'. Please wait...${reset}"
-    echo ""
-    apt-get -y install pv && apt-get -y install pv dialog
-fi
 
 # Create a filename with datestamp for our current backup
 OFILE="$DIR/backup_$(hostname)_$(date +%Y%m%d_%H%M%S)".img
@@ -182,36 +334,10 @@ stopServices
 
 # Begin the backup process, should take about 45 minutes hour from 8Gb SD card to HDD
 echo -e "${green}${bold}Backing up SD card to img file on HDD${reset}"
-SDSIZE=`blockdev --getsize64 /dev/mmcblk0`;
+getSectorSize
+buildBackupCommand
 
-if [ $TRUNCATE = 1 ];
-then
-    getEndSector
-    getSectorSize
-fi
-
-if [ $GZIP = 1 ];
-then
-    OFILE=$OFILE.gz # append gz at file
-
-    if [ $TRUNCATE = 1 ];
-    then
-	echo -e "${green}Gzipping truncated backup...${reset}"
-        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd bs=$SECTORSIZE conv=sync,noerror iflag=fullblock count=$ENDSECTOR | gzip > $OFILE
-    else
-        echo -e "${green}Gzipping backup...${reset}"
-        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd bs=1M conv=sync,noerror iflag=fullblock | gzip > $OFILE
-    fi
-else
-    if [ $TRUNCATE = 1 ];
-    then
-        echo -e "${green}Truncated backup without compression...${reset}"
-	pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=$SECTORSIZE conv=sync,noerror iflag=fullblock count=$ENDSECTOR
-    else
-        echo -e "${green}ackup without compression...${reset}"
-        pv -tpreb /dev/mmcblk0 -s $SDSIZE | dd of=$OFILE bs=1M conv=sync,noerror iflag=fullblock
-    fi
-fi
+eval $SCR_FINAL
 
 # Wait for DD to finish and catch result
 BACKUP_SUCCESS=$?
@@ -222,10 +348,16 @@ startServices
 # If command has completed successfully, delete previous backups and exit
 if [ $BACKUP_SUCCESS = 0 ];
 then
-    echo -e "${green}${bold}RaspberryPI backup process completed!${reset}"
-    echo -e "${green}FILE: $OFILE${reset}"
-    echo -e "${green}SIZE: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}" 
-    echo -e "${yellow}Removing backups older than $RETENTIONPERIOD days:${reset}"
+    if [ $GUI = 1 ];
+    then
+        messageBox 13 70 "Success" "Raspberry Pi backup process completed!\nFILE: $OFILE\nSIZE: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))"
+    else
+        echo -e "${green}${bold}Raspberry Pu backup process completed!${reset}"
+        echo -e "${green}FILE: $OFILE${reset}"
+        echo -e "${green}SIZE: $(du -sb $OFILE | awk '{print $1}') ($(du -h $OFILE | awk '{print $1}'))${reset}" 
+        echo -e "${yellow}Removing backups older than $RETENTIONPERIOD days:${reset}"
+    fi
+
     find $DIR -maxdepth 1 -name "*.img" -o -name "*.img.gz" -mtime +$RETENTIONPERIOD -print -exec rm {} \;
     echo -e "${cyan}If any backups older than $RETENTIONPERIOD days were found, they were deleted${reset}"
 
@@ -237,7 +369,13 @@ then
     exit 0
 else
     # Else remove attempted backup file
-    echo -e "${red}${bold}Backup failed!${reset}"
+    if [ $GUI = 1 ];
+    then
+        messageBox 10 40  "Fail" "Backup failed!"
+    else
+        echo -e "${red}${bold}Backup failed!${reset}"
+    fi
+
     rm -f $OFILE
     echo -e "${purple}Last backups on HDD:${reset}"
     find $DIR -maxdepth 1 -name "*.img" -o -name "*.img.gz" -print
