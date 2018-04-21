@@ -12,7 +12,14 @@ ___Example___
 
 Update /etc/crontab to run backup.sh as root every night at 3am
 
-```01 3    * * *   root    /home/pi/scripts/backup.sh```
+```
+01 3    * * *   root    /home/pi/scripts/backup.sh
+```
+
+Another example with logging
+```
+0 4 * * * /home/pi/scripts/backup.sh -g 0 2>&1 | /home/pi/scripts/uncolor.sh | /home/pi/scripts/timestamp.sh >> /media/pi/raspi/raspberrypi_backups/backup_raspberrypi.log
+```
 
 The backup took a little more than an hour on my first run (SD card to USB HDD).
 
